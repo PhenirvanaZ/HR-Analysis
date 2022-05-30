@@ -1,0 +1,488 @@
+---
+title: "ECON7880 project- HR Analytics"
+author: "Group 8"
+date: "2021/11/30"
+output: word_document
+---
+which department has a higher left rate?/ prediction for an employee whether left 
+Models: logistic regression/SVM/decision tree 
+
+#Data preparation
+```{r}
+rm(list=ls())
+cat("\014")
+
+library(readr)
+HR_comma_sep <- read_csv("D:/DABE/7880(Fri)/Final Project/HR_comma_sep.csv")
+data = HR_comma_sep
+head(data)
+colnames(data)
+nrow(data)
+unique(data$sales)
+unique(data$salary)
+str(data)
+data$sales <- factor(data$sales)
+data$salary <- factor(data$salary) # change character into factor
+summary(data)
+```
+
+
+##Data Visualization
+```{r}
+pie(table(data$left),main="Left", col=c("yellow","green"))
+#approximately a quarter of people left the company
+```
+
+```{r}
+library(corrplot)
+cor_mat <- cor(data[,1:8])
+corrplot(cor_mat, method="number")
+#left correlates more with satisfaction_level and time_spend_company and Work_accident
+```
+
+```{r}
+library(ggplot2)
+ggplot(data, aes(satisfaction_level)) + geom_area( stat = "bin", bins = 30,fill = "steelblue")+ 
+  scale_x_continuous(breaks = seq(0,1,0.1)) 
+#most people have higher satisfaction level
+```
+
+```{r}
+ggplot(data, aes(time_spend_company)) + geom_bar(fill = "darkgreen")+
+  coord_flip()+ labs(title = "Years of work in the company") 
+#most people work in the company for 2.5-3.5 years
+```
+
+```{r}
+pie(table(data$Work_accident),main="Accident in work place", col=c("antiquewhite","darkslategray"))
+#most people have no work accident
+```
+
+```{r}
+pie(table(data$promotion_last_5years),main="promotion", col=c("orangered","yellowgreen"))
+#most people get no promotion
+```
+
+```{r}
+ggplot(data,aes(x = factor(""), fill = salary) ) +
+  geom_bar() +
+  coord_polar(theta = "y") +
+  scale_x_discrete("")  
+#less people get high salary
+```
+
+```{r}
+data$left[data$left==1]<-'OFF'
+data$left[data$left==0]<-'STAY'
+ggplot(data, aes(left, fill = sales) ) +
+  geom_bar(position = "stack")
+#people in sales, technical and support departments are prefer to leave
+```
+
+```{r}
+ggplot(data, aes(left, fill = salary) ) +
+  geom_bar(position = "stack") 
+#people with low salary prefer to leave compared whit other types of salary
+```
+
+```{r}
+head(data)    #left shows NA
+data$left[data$left=='OFF']<-1
+data$left[data$left=='STAY']<-0          # convert left to original format
+data = sapply(data, as.numeric)          # convert other variables as numeric
+data  = as.data.frame(data)              # transform the matrix to data.frame for analysis
+head(data)   #for check
+```
+
+
+## Split the data into train and test set
+```{r}
+set.seed(123)
+ind <- sample(seq(1,nrow(data),1),10000,replace=FALSE)  #14999 numbers, randomly choose 10000 as train
+train <- data[ind,]
+test <- data[-ind,]  #4999 obs as test data
+```
+
+
+#Logit regression:
+```{r}
+library(foreign)
+m1 = glm(left~satisfaction_level + time_spend_company + Work_accident,                
+         data=train, 
+         family=binomial(link='logit'))        # logit can be replaced by probit
+summary(m1)
+```
+
+```{r}
+m2 = glm(left~., data=train, family=binomial(link='logit')) 
+summary(m2)
+```
+
+## Check the predicted probability on train data
+```{r}
+fit = m2$fitted.values
+head(fit)
+head(train$left)
+```
+
+## Check predicted log-odds on training data
+```{r}
+logodd = m2$linear.predictors
+head(logodd)
+```
+
+## predict the log-odds ratio, calculate the accuracy rate
+```{r}
+m2.logodd_test = predict(m2, newdata=test[,1:10], type="link")  # test[,1:11] means 1-11st cols
+
+m2.class  = as.numeric(m2.logodd_test>0)  # convert logodd into class (0,1)
+m2.class                                  # can also convert prob into class (0,1)
+```
+
+```{r}
+m2.correct  = sum(as.numeric(test$left == m2.class))            # no. of correctly predicted cases
+m2.correct                                # 3803
+```
+
+```{r}
+m2.acc = mean(as.numeric(test$left == m2.class))            
+m2.acc                                    #0.7607522
+```
+
+## compute the probability  (P(y=1|x)), assign it to m2.prob_test and compute accuracy rate.
+```{r}
+m2.prob_test   = predict(m2, newdata=test[,1:10], type="response") 
+head(round(m2.prob_test,4))
+```
+
+```{r}
+m2.class_test  = as.numeric(m2.prob_test>0.5)  
+m2.correct_test = sum(as.numeric(test$left == m2.class_test)) 
+m2.acc_test = m2.correct_test/nrow(test)
+
+m2.acc_test                                #0.7607522
+```
+
+##(train data) predict the log-odds ratio, calculate the accuracy rate:
+```{r}
+m3.logodd_train = predict(m2, newdata=train[,1:10], type="link")    # test[,1:11] means 1-11st cols
+
+m3.class  = as.numeric(m3.logodd_train>0)           # convert logodd into class (0,1)
+m3.class
+```
+
+```{r}
+m3.correct  = sum(as.numeric(train$left == m3.class))       # no. of correctly predicted cases
+m3.correct                                 #7669
+```
+
+```{r}
+m3.acc = mean(as.numeric(train$left == m3.class))           
+m3.acc                                     #0.7669
+```
+
+## compute the probability  (P(y=1|x)), assign it to m3.prob_train and compute accuracy rate.
+```{r}
+m3.prob_train = predict(m2, newdata=train[,1:10], type="response") 
+head(round(m3.prob_train,4))
+```
+
+```{r}
+m3.class_train  = as.numeric(m3.prob_train>0.5)  
+m3.correct_train = sum(as.numeric(train$left == m3.class_train)) 
+m3.correct_train                          #7669
+```
+
+```{r}
+m3.acc_train = m3.correct_train/nrow(train)
+m3.acc_train                              #0.7669
+```
+
+
+#SVM
+##1
+```{r}
+library(e1071)
+
+tuned <- tune.svm(left ~., data = train, cost = 10^(1:2)) # tune
+summary(tuned)
+```
+
+```{r}
+svm1 =svm(left~., data=train , cost=100,  kernel ="radial",  type="C") 
+svm1$index         
+svm1$SV           
+summary(svm1)       # 1132 SV
+```
+
+```{r}
+table(fitted=svm1$fitted, actual= train$left)  
+acc1_train = mean(as.numeric(svm1$fitted==train$left))
+acc1_train  
+```
+
+```{r}
+pre_svm <- predict(svm1,newdata = test)
+obs_p_svm = data.frame(prob=pre_svm,obs=test$left)
+table(test$left,pre_svm,dnn=c("true value","predict value"))
+```
+
+```{r}
+library(pROC)
+svm_roc <- roc(test$left,as.numeric(pre_svm))
+plot(svm_roc, print.auc=TRUE, auc.polygon=TRUE, grid=c(0.1, 0.2),grid.col=c("green", "red"), max.auc.polygon=TRUE,auc.polygon.col="skyblue", print.thres=TRUE,main='SVM-ROC curve kernel = radial')
+```
+
+##2
+```{r}
+svm2 =svm(left~., data=train , cost=100, kernel ="polynomial",  type="C") 
+svm2$index         
+svm2$SV           
+summary(svm2)       # 1230 SV
+```
+
+```{r}
+table(fitted=svm2$fitted, actual= train$left)  
+acc2_train = mean(as.numeric(svm2$fitted==train$left))
+acc2_train
+```
+
+```{r}
+pre_svm2 <- predict(svm2,newdata = test)
+obs_p_svm2 = data.frame(prob=pre_svm2,obs=test$left)
+table(test$left,pre_svm2,dnn=c("true value","predict value"))
+```
+
+```{r}
+svm_roc2 <- roc(test$left,as.numeric(pre_svm2))
+plot(svm_roc2, print.auc=TRUE, auc.polygon=TRUE, grid=c(0.1, 0.2),grid.col=c("green", "red"), max.auc.polygon=TRUE,auc.polygon.col="skyblue", print.thres=TRUE,main='SVM-ROC curve kernel =polynomial')
+```
+
+
+#Tree model
+```{r}
+library(rpart)
+```
+
+##training data
+```{r}
+Tree_train = rpart(as.factor(left)~ .,
+                   data=train,method='class',
+                   minsplit=20,minbucket=7,cp=0.01)  ###train data
+summary(Tree_train)
+```
+
+##show the importance of different variables (train data)
+```{r}
+Tree_train$variable.importance  
+head(train)
+```
+
+##plot the tree model(train_data)
+```{r}
+Tree_train2 = as.party(Tree_train)
+plot(Tree_train2)
+```
+
+##Prediction (Training data) and compute the accuracy
+```{r}
+predict_train = predict(Tree_train, 
+                        newdata = train[,c(1:6,8:10)], 
+                        type = "class")  ###train[,c(1:6,8:10)],delete"left"
+predict_train
+acc_train= mean(train$left==predict_train) 
+acc_train
+```
+
+##test data
+```{r}
+Tree_test<-rpart(as.factor(left)~ .,
+                 data=test,method='class',
+                 minsplit=20,minbucket=7,cp=0.01)  
+summary(Tree_test)
+```
+
+##show the importance of different variables (test data)
+```{r}
+Tree_test$variable.importance
+```
+
+##plot the tree model(test_data)
+```{r}
+Tree_test2 = as.party(Tree_test)
+plot(Tree_test2)
+```
+
+## Prediction (Test data) and compute the accuracy
+```{r}
+predict_test = predict(Tree_test, 
+                       newdata = test[,c(1:6,8:10)], 
+                       type = "class")  ###train[,c(1:6,8:10)],delete"left"
+predict_test
+acc_test= mean(test$left==predict_test) 
+acc_test
+```
+
+
+#Curves
+```{r}
+library(ROCR)     # For evaluation metrics
+library(caret)    # For confusion matrix
+library(foreign)  # For importing data
+```
+
+##Predict the probability of LEAVE on test data set, store them as variables in the data frame.
+```{r}
+test$Yhat_log <- predict(m2, newdata = test[,1:10], type = "response")          
+
+pred = predict(svm2, newdata = test[,1:10],probability=TRUE)
+test$Yhat_svm = attr(pred,'probabilities')[,1]                                   # prob for class '1' is in col 1
+
+test$Yhat_tree = predict(tree_model, newdata = test[,1:10], type = "prob")[,2]    # prob for class '1' is in col 2
+
+head(test)          # take a look of the probabilities in test data frame
+```
+
+##Confusion Matrix with different thresholds
+```{r}
+attach(test)
+```
+
+##write a function so that we can play with different thresholds for class prediction
+```{r}
+class_log = function(x){ifelse(Yhat_log > x, 1, 0)}
+class_svm <- function(x){ifelse(Yhat_svm > x, 1, 0)}
+class_tree <- function(x){ifelse(Yhat_tree > x, 1, 0)}
+```
+
+##Generate confusion matrix using caret::confusionMatrix (predict_values, actual_values)
+###try cut_off = 0.5 for logistic regression
+```{r}
+predicted_log = class_log(0.5)
+table(predicted_log, left)                # a simple confusion matrix without metrics
+
+CF <- confusionMatrix(factor(predicted_log), left, positive=as.character(1))  
+CF          
+
+CF$table     
+CF$overall   
+CF$byClass    
+```
+
+###try cut_off = 0.5 for SVM
+```{r}
+predicted_svm = class_svm(0.5)
+CF_svm <- confusionMatrix(factor(predicted_svm), left, positive=as.character(1))
+CF_svm$table    
+CF_svm$overall 
+CF_svm$byClass  
+```
+
+###try cut_off = 0.5 for tree model
+```{r}
+predicted_tree = class_tree(0.5)
+CF_tree <- confusionMatrix(factor(predicted_tree), factor(left), positive=as.character(1))
+CF_tree$table
+CF_tree$overall
+CF_tree$byClass
+```
+
+##Plot Accuracy, ROC, ARC, Lift Curves using library 'ROCR'
+###create a prediction object
+```{r}
+predict_log <- prediction(Yhat_log, left)       # prediction(predicted prob, actual class labels)
+predict_svm <- prediction(Yhat_svm, left)
+predict_tree  <- prediction(Yhat_tree, left)
+```
+
+###plot accuracy curves
+```{r}
+acc_log = performance(predict_log,'acc')      #x.measure='cutoff' by default 
+acc_svm = performance(predict_svm,'acc')
+acc_tree = performance(predict_tree,'acc')
+```
+
+```{r}
+plot.new()
+plot(acc_log, col='deeppink', lwd=2, ylim=c(0.4,0.75))
+plot(acc_svm, col='cyan3', lwd=2, add=TRUE)
+plot(acc_tree, col='blueviolet', lwd=2, add=TRUE)
+title("Accuracy curves")
+legend(0.7, 0.5 ,c("Logistic", "SVM", "TREE"), 
+       lty = c(1,1,1), 
+       lwd = c(2,2,2),
+       col = c("deeppink", "cyan3", "blueviolet"),
+       ncol=1, cex=0.9, y.intersp=1.2)
+```
+
+###ROC curves
+```{r}
+ROC_log <- performance(predict_log, "tpr", "fpr")  
+ROC_svm <- performance(predict_svm, "tpr", "fpr")
+ROC_tree <- performance(predict_tree, "tpr", "fpr")
+
+plot.new()
+plot(ROC_log, col= "deeppink",lwd=2)
+plot(ROC_svm, add = TRUE, col= "cyan3",lwd=2)
+plot(ROC_tree, add = TRUE, col= "blueviolet",lwd=2)
+abline(0,1, col = "black")
+title("ROC curves")
+legend(0.7, 0.5 ,c("Logistic", "SVM", "TREE"), 
+       lty = c(1,1,1), 
+       lwd = c(2,2,2),
+       col = c("deeppink", "cyan3", "blueviolet"),
+       ncol=1, cex=0.9, y.intersp=1.2)
+```
+
+###AUC value: which one is higher?
+```{r}
+auc_log = performance(predict_log,"auc")
+auc_log@y.values                       
+
+auc_svm  = performance(predict_svm,"auc")
+auc_svm@y.values 
+
+auc_tree  = performance(predict_tree,"auc")
+auc_tree@y.values
+```
+
+###Cumulative Response Curve (CRC)
+```{r}
+crc_log <- performance(predict_log,measure="tpr",x.measure='rpp')
+crc_svm <- performance(predict_svm,measure="tpr", x.measure="rpp")
+crc_tree <- performance(predict_tree,measure="tpr", x.measure="rpp")
+```
+
+```{r}
+plot.new()
+plot(crc_log, col='deeppink', lwd=2)
+plot(crc_svm, add=TRUE, col ='cyan3', lwd=2)
+plot(crc_tree, add=TRUE, col ='blueviolet', lwd=2)
+abline(0,1, col = "black")
+title("CRC curves")
+legend(0.7, 0.4 ,c("Logistic", "SVM", "TREE"), 
+       lty = c(1,1,1), 
+       lwd = c(2,2,2),
+       col = c("deeppink", "cyan3", "blueviolet"),
+       ncol=1, cex=1, y.intersp=1.2)
+```
+
+###Lift Curves
+```{r}
+lift_log = performance(predict_log,measure="lift", x.measure="rpp")
+lift_svm = performance(predict_svm,measure="lift", x.measure="rpp")
+lift_tree = performance(predict_tree,measure="lift", x.measure="rpp")
+
+plot.new()
+plot(lift_log, col='deeppink', lwd=2)
+plot(lift_svm, col='cyan3', lwd=2, add=TRUE)
+plot(lift_tree, col='blueviolet', lwd=2, add=TRUE)
+title("Lift curves")
+abline(1,0, col = "black")
+legend(0.7, 1.5 ,c("Logistic", "SVM", "TREE"), 
+       lty = c(1,1,1), 
+       lwd = c(2,2,2),
+       col = c("deeppink", "cyan3", "blueviolet"),
+       ncol=1, cex=1, y.intersp=1.2)
+```
+
